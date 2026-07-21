@@ -103,9 +103,14 @@ class PlayerState extends Schema {}
 defineTypes(PlayerState, { name: 'string', x: 'number', y: 'number', z: 'number', yaw: 'number', carry: 'number', banked: 'number', hull: 'number', dead: 'boolean' });
 
 class ArenaState extends Schema {
-  constructor() { super(); this.players = new MapSchema(); }
+  constructor() {
+    super();
+    this.players = new MapSchema();
+    this.roundEndsAt = 0; // epoch ms — the ROOM owns the clock
+    this.phase = 'play';  // 'play' | 'inter'
+  }
 }
-defineTypes(ArenaState, { players: { map: PlayerState } });
+defineTypes(ArenaState, { players: { map: PlayerState }, roundEndsAt: 'number', phase: 'string' });
 
 class ArenaRoom extends Room {
   onCreate(options = {}) {
@@ -115,6 +120,9 @@ class ArenaRoom extends Room {
     this.deadUntil = new Map();
     this.setState(new ArenaState());
     this.setPatchRate(50); // 20Hz
+    // room-synced rounds: 5:00 default; private/test rooms may override (30s–10min)
+    this.roundLenMs = Math.min(600, Math.max(30, (+options.roundLen || 300))) * 1000;
+    this.startRound();
 
     this.onMessage('move', (client, m) => {
       const p = this.state.players.get(client.sessionId);
@@ -139,6 +147,7 @@ class ArenaRoom extends Room {
     });
     // shooter claims a hit; server owns hulls, deaths, and the robbery
     this.onMessage('pvpHit', (client, m) => {
+      if (this.state.phase !== 'play') return; // no violence during intermission
       const shooter = this.state.players.get(client.sessionId);
       const target = this.state.players.get(m && m.sid);
       if (!shooter || !target || shooter === target) return;
@@ -180,6 +189,27 @@ class ArenaRoom extends Room {
       if (h <= p.hull) p.hull = h;
     });
   }
+  startRound() {
+    this.state.phase = 'play';
+    this.state.roundEndsAt = Date.now() + this.roundLenMs;
+    this.state.players.forEach((p) => {
+      p.carry = 0; p.banked = 0; p.hull = MAX_HULL; p.dead = false;
+    });
+    this.deadUntil.clear();
+    this.broadcast('roundStart', { endsAt: this.state.roundEndsAt });
+    if (this.roundTimer) this.roundTimer.clear();
+    this.roundTimer = this.clock.setTimeout(() => this.finishRound(), this.roundLenMs);
+  }
+
+  finishRound() {
+    this.state.phase = 'inter';
+    const standings = [];
+    this.state.players.forEach((p) => standings.push({ name: p.name, banked: p.banked }));
+    standings.sort((a, b) => b.banked - a.banked);
+    this.broadcast('roundOver', { standings, nextInMs: 8000 });
+    this.clock.setTimeout(() => this.startRound(), 8000);
+  }
+
   onJoin(client, options) {
     const p = new PlayerState();
     p.name = cleanName(options && options.name);
