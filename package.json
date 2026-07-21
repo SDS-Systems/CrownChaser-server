@@ -1,0 +1,21 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.0",
+    "cors": "^2.8.5",
+    "colyseus": "0.16.5",
+    "@colyseus/schema": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
