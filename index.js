@@ -127,6 +127,16 @@ class ArenaRoom extends Room {
       p.carry = Math.max(0, m.carry | 0);
       p.banked = Math.max(0, m.banked | 0);
     });
+    // tracer relay: everyone sees everyone's shots
+    this.onMessage('shot', (client, m) => {
+      if (typeof m !== 'object' || !m.f || !m.t) return;
+      this.broadcast('shot', {
+        sid: client.sessionId,
+        f: { x: +m.f.x || 0, y: +m.f.y || 0, z: +m.f.z || 0 },
+        t: { x: +m.t.x || 0, y: +m.t.y || 0, z: +m.t.z || 0 },
+        w: Math.min(1, Math.max(0, +m.w || 0)),
+      }, { except: client });
+    });
     // shooter claims a hit; server owns hulls, deaths, and the robbery
     this.onMessage('pvpHit', (client, m) => {
       const shooter = this.state.players.get(client.sessionId);
@@ -138,6 +148,11 @@ class ArenaRoom extends Room {
       if (dx * dx + dy * dy + dz * dz > PVP_RANGE_SQ) return; // impossible shot
       target.hull -= pips;
       this.broadcast('hitfx', { sid: m.sid, pips }, { except: client });
+      // the victim feels it: hull update + red flash on their screen
+      if (target.hull > 0) {
+        const vc = this.clients.find((c) => c.sessionId === m.sid);
+        if (vc) vc.send('hurt', { hull: target.hull });
+      }
       if (target.hull <= 0) {
         const stolen = target.carry;
         target.carry = 0;
