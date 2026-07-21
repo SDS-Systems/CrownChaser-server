@@ -204,7 +204,7 @@ class ArenaRoom extends Room {
   finishRound() {
     this.state.phase = 'inter';
     const standings = [];
-    this.state.players.forEach((p) => standings.push({ name: p.name, banked: p.banked }));
+    this.state.players.forEach((p, sid) => standings.push({ name: p.name, banked: p.banked, sid }));
     standings.sort((a, b) => b.banked - a.banked);
     this.broadcast('roundOver', { standings, nextInMs: 8000 });
     this.clock.setTimeout(() => this.startRound(), 8000);
