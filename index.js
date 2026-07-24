@@ -100,7 +100,7 @@ const RESPAWN_MS = 7000;
 const PVP_RANGE_SQ = 130 * 130; // sanity check on claimed hits
 
 class PlayerState extends Schema {}
-defineTypes(PlayerState, { name: 'string', x: 'number', y: 'number', z: 'number', yaw: 'number', carry: 'number', banked: 'number', hull: 'number', dead: 'boolean' });
+defineTypes(PlayerState, { name: 'string', x: 'number', y: 'number', z: 'number', yaw: 'number', carry: 'number', banked: 'number', hull: 'number', dead: 'boolean', team: 'string' });
 
 class ArenaState extends Schema {
   constructor() {
@@ -115,7 +115,6 @@ defineTypes(ArenaState, { players: { map: PlayerState }, roundEndsAt: 'number', 
 
 class ArenaRoom extends Room {
   onCreate(options = {}) {
-    this.maxClients = 4;
     this.code = String(options.code || '');
     this.region = String(options.region || '');
     this.deadUntil = new Map();
@@ -123,6 +122,8 @@ class ArenaRoom extends Room {
     this.setPatchRate(50); // 20Hz
     // mode sets the clock: speed 5:00, crownfall 10:00; roundLen option overrides (tests)
     this.state.mode = options.mode === 'crownfall' ? 'crownfall' : 'speed';
+    // crownfall is 4v4 team deathmatch — bigger rooms
+    this.maxClients = this.state.mode === 'crownfall' ? 8 : 4;
     const defaultLen = this.state.mode === 'crownfall' ? 600 : 300;
     this.roundLenMs = Math.min(600, Math.max(30, (+options.roundLen || defaultLen))) * 1000;
     this.startRound();
@@ -155,6 +156,8 @@ class ArenaRoom extends Room {
       const target = this.state.players.get(m && m.sid);
       if (!shooter || !target || shooter === target) return;
       if (target.dead || shooter.dead) return;
+      // crownfall: no friendly fire — the server is the referee
+      if (this.state.mode === 'crownfall' && shooter.team && shooter.team === target.team) return;
       const pips = Math.min(3, Math.max(1, m.pips | 0));
       const dx = shooter.x - target.x, dy = shooter.y - target.y, dz = shooter.z - target.z;
       if (dx * dx + dy * dy + dz * dz > PVP_RANGE_SQ) return; // impossible shot
@@ -207,9 +210,17 @@ class ArenaRoom extends Room {
   finishRound() {
     this.state.phase = 'inter';
     const standings = [];
-    this.state.players.forEach((p, sid) => standings.push({ name: p.name, banked: p.banked, sid }));
+    this.state.players.forEach((p, sid) => standings.push({ name: p.name, banked: p.banked, sid, team: p.team || '' }));
     standings.sort((a, b) => b.banked - a.banked);
-    this.broadcast('roundOver', { standings, nextInMs: 8000 });
+    const msg = { standings, nextInMs: 8000 };
+    if (this.state.mode === 'crownfall') {
+      // official team totals: HUMANS ONLY — each client's seat-fill bots are local color
+      const teams = { blue: 0, gold: 0 };
+      this.state.players.forEach((p) => { if (p.team) teams[p.team] += p.banked; });
+      msg.teams = teams;
+      msg.winner = teams.blue === teams.gold ? 'tie' : (teams.blue > teams.gold ? 'blue' : 'gold');
+    }
+    this.broadcast('roundOver', msg);
     this.clock.setTimeout(() => this.startRound(), 8000);
   }
 
@@ -218,6 +229,14 @@ class ArenaRoom extends Room {
     p.name = cleanName(options && options.name);
     p.x = 0; p.y = 1.7; p.z = 26; p.yaw = 0;
     p.carry = 0; p.banked = 0; p.hull = MAX_HULL; p.dead = false;
+    if (this.state.mode === 'crownfall') {
+      // balanced assignment: join the smaller team, blue breaks ties
+      let blue = 0, gold = 0;
+      this.state.players.forEach((q) => { if (q.team === 'blue') blue++; else if (q.team === 'gold') gold++; });
+      p.team = blue <= gold ? 'blue' : 'gold';
+    } else {
+      p.team = '';
+    }
     this.state.players.set(client.sessionId, p);
   }
   onLeave(client) {
