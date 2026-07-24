@@ -108,9 +108,10 @@ class ArenaState extends Schema {
     this.players = new MapSchema();
     this.roundEndsAt = 0; // epoch ms — the ROOM owns the clock
     this.phase = 'play';  // 'play' | 'inter'
+    this.mode = 'speed';  // 'speed' (5:00) | 'crownfall' (10:00, vault open)
   }
 }
-defineTypes(ArenaState, { players: { map: PlayerState }, roundEndsAt: 'number', phase: 'string' });
+defineTypes(ArenaState, { players: { map: PlayerState }, roundEndsAt: 'number', phase: 'string', mode: 'string' });
 
 class ArenaRoom extends Room {
   onCreate(options = {}) {
@@ -120,8 +121,10 @@ class ArenaRoom extends Room {
     this.deadUntil = new Map();
     this.setState(new ArenaState());
     this.setPatchRate(50); // 20Hz
-    // room-synced rounds: 5:00 default; private/test rooms may override (30s–10min)
-    this.roundLenMs = Math.min(600, Math.max(30, (+options.roundLen || 300))) * 1000;
+    // mode sets the clock: speed 5:00, crownfall 10:00; roundLen option overrides (tests)
+    this.state.mode = options.mode === 'crownfall' ? 'crownfall' : 'speed';
+    const defaultLen = this.state.mode === 'crownfall' ? 600 : 300;
+    this.roundLenMs = Math.min(600, Math.max(30, (+options.roundLen || defaultLen))) * 1000;
     this.startRound();
 
     this.onMessage('move', (client, m) => {
