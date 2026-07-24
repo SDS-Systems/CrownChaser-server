@@ -124,7 +124,7 @@ class ArenaRoom extends Room {
     this.state.mode = options.mode === 'crownfall' ? 'crownfall' : 'speed';
     // crownfall is 4v4 team deathmatch — bigger rooms
     this.maxClients = this.state.mode === 'crownfall' ? 8 : 4;
-    const defaultLen = this.state.mode === 'crownfall' ? 600 : 300;
+    const defaultLen = 300; // both modes run 5:00 — 10-minute crownfall dragged (playtest)
     this.roundLenMs = Math.min(600, Math.max(30, (+options.roundLen || defaultLen))) * 1000;
     this.startRound();
 
